@@ -1,57 +1,31 @@
-import Exscript
-import os.path
 import sys
+import argparse
 
-from Exscript.util.interact import read_login
-from Exscript.protocols import SSH2
+from fabric.api import *
 from ciscoconfparse import CiscoConfParse
 
-#Prompts for info
-host_ip = raw_input("Remote Host IP: ")
-account = read_login()   
+#ArgParse
+parser = argparse.ArgumentParser()
+parser.add_argument("ip", help = "IP address of remote device")
+parser.add_argument("function", type=int, help = "Desired function to be run")
+parser.add_argument("username", help = "Login username")
+parser.add_argument("password", help = "Login password")
+parser.add_argument("-p", "--enpass", help = "(Optional) Enable password")
+args = parser.parse_args()
 
-#Logs in, pulls config, saves to file
-conn = SSH2()                       
-conn.connect(host_ip)     
-conn.login(account)    
-conn.execute("term len 0")            
-conn.execute("sh run")
-save_path = "/media/jonathan/DATA/Documents/CiscoConfParse/"
-save_name = "conftest.txt"
-complete_name = os.path.join(save_path, save_name)
-target = open(complete_name, "w+")
-target.write(conn.response)
-target.close()
+#Logs in, pulls and parses config
+env.user=args.username
+env.host_string=args.ip
+env.password=args.password
+run("en", shell=False)
+if args.enpass:
+	run(args.enpass, shell=False)
+else:
+	pass
 
-parse = CiscoConfParse(complete_name, factory=True)
-
-#Execute commands
-def run():
-	print
-	print "Available functions:"
-	print "        List Int = 1    List CDP = 2    List VLANs = 3    Exit = X"
-	print "        Change VLANs = 4"
-	run_function = raw_input("Run Function #: ")    
-	if run_function == "1":
-		list_ints()
-		run()
-	elif run_function == "2":
-		list_cdp()
-		run()
-	elif run_function == "3":
-		list_vlans()
-		run()
-	elif run_function == "4":
-		change_vlans()
-		run()
-	elif run_function == "X" or run_function == "x":
-		print
-		print "Have a great day!"
-		sys.exit()
-	else:
-		print
-		print "!!!Invalid Input!!!"
-		run()  
+config=[]
+text = run("sh run", shell=False)
+parse = CiscoConfParse(text.splitlines(), factory=True)
 
 #Lists interfaces on device
 def list_ints():
@@ -59,7 +33,7 @@ def list_ints():
 	print
 	print "    Interfaces"
 	for x in ints:
-    		print "*" + x.text
+			print "*" + x.text
 
 #Lists CDP enabled interfaces
 def list_cdp():
@@ -68,10 +42,11 @@ def list_cdp():
 		print
 		for x in cdp_ints:
 			print "*" + x.text
+		print
 	else:
 		print
-		cdp_intfs = "*CDP disabled globally"
-		print cdp_intfs
+		print "*CDP disabled globally"
+		print
 
 #Lists interface VLAN
 def list_vlans():
@@ -89,6 +64,7 @@ def list_vlans():
 		for y in ints:
 			if y.access_vlan == x:
 				print "*" + y.text
+	print
 
 #Changes all vlans to default
 def change_vlans():
@@ -103,18 +79,26 @@ def change_vlans():
 	if not conf_change:
 		print
 		print "*There are no changes to be made"
+		print
 		return
 	else:
 		conf_change.insert(0, "conf t")
 		conf_change.append("exit")
 		conf_change.append("exit")
+		conf_change.append("wr")
 		for x in int_change:
-			print "*" + x + " will be changed" 
-		choice = raw_input("Should config be saved? (y/n)")
-		if choice == "Y" or choice == "y":
-			conf_change.append("wr")
+			print "*" + x + " will be changed"
 		for x in conf_change:
-			conn.execute(x)		
+			run(x, shell=False)
 
 
-run()
+#Execute commands
+run_function = args.function
+if run_function == 1:
+	list_ints()
+elif run_function == 2:
+	list_cdp()
+elif run_function == 3:
+	list_vlans()
+elif run_function == 4:
+	change_vlans()
